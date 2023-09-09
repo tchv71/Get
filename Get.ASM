@@ -1,36 +1,19 @@
-;VV55  equ        0C400h   ;base of 16450 UART
-VV55	equ	010h;  8255 second
-USER_PORT equ VV55
-DATA    equ        0          ;  Data register
-STAT    equ        2          ;  Status register
+VV55  equ        0C400h   ;base of 16450 UART
+;VV55	equ	010h;  8255 second
+;USER_PORT equ VV55
+;DATA    equ        0          ;  Data register
+;STAT    equ        2          ;  Status register
 ;  Define monitor serial port
-SERIAL_STATUS   equ   VV55+STAT
-CLIENT_STATUS   equ   VV55+1
-SERIAL_DATA   equ   VV55+DATA
-SERIAL_CONTROL equ  VV55+3
+;SERIAL_STATUS   equ   VV55+STAT
+;CLIENT_STATUS   equ   VV55+1
+;SERIAL_DATA   equ   VV55+DATA
+;SERIAL_CONTROL equ  VV55+3
 
 RXRDY equ                 1            ; MASK FOR RX BUFFER FULL
 TXRDY equ                 2            ; MASK FOR TX BUFFER EMPTY
 
-; IN and OUT MACRO comands
-@in	MACRO	addr
-IF ((addr) LT 256)
-	in	addr
-ELSE
-	lda	addr
-ENDIF
-	ENDM
 
-@out	MACRO	addr
-IF ((addr) LT 256)
-	out	addr
-ELSE
-	sta	addr
-ENDIF
-	ENDM
-
-
-ORG_START          EQU        8000H
+ORG_START          EQU        08000H
 
 	LXI	H, GET_ORG_START
 	LXI	D, GET_START
@@ -50,14 +33,22 @@ GET_ORG_START:
 
 	.PHASE ORG_START
 GET_START:
-	CALL	GTFNAM
+	LXI	D,VRAM_ADR
+	CALL	BIOS_CONFIG
+
+	;CALL	GTFNAM
 	CALL	GTOPT
 	MVI	A,9
 	CALL	StartCommand
 	CALL	READRK_NO_START
 	MVI	A,3
-	@out	CLIENT_STATUS
-	LXI	B,1000
+	;@out	CLIENT_STATUS
+	PUSH	H
+	LHLD	PPI2_ADR
+	INX	H
+	call	_out
+	POP	H
+	LXI	B,5000
 L001:	DCX	B
 	MOV	A,B
 	ORA	C
@@ -72,6 +63,48 @@ L001:	DCX	B
 	DCR	A
 	JNZ	0
 	PCHL
+
+BIOS_CONFIG:
+	LHLD	1
+	LXI	B,30H
+	DAD	B
+	MOV	A,M
+	CPI	JMP
+	RNZ
+	INX	H
+	PUSH	D
+	MOV	E,M
+	INX	H
+	MOV	D,M
+	XCHG
+	POP	D
+	PCHL
+
+_in::	INR	H
+	DCR	H
+	JZ	_in_port
+	MOV	A,M
+	RET
+_in_port:
+	MOV	A,L
+	STA	$+4
+	IN	0
+	RET
+
+_out::	INR	H
+	DCR	H
+	jz	_out_port
+	MOV	M,A
+	RET
+_out_port:
+	PUSH	PSW
+	MOV	A,L
+	STA	$+5
+	POP	PSW
+	OUT	0
+	RET
+
+
 
 READRK_START:
 	MVI	C,1
@@ -159,14 +192,20 @@ StartCommand1:
 	CALL          SwitchRecv
 
 	; Beginning of any command (play a sequence in address bus)
+	LHLD	PPI2_ADR
+	INX	H
 	xra	a
-	@out	USER_PORT+1
+	;@out	USER_PORT+1
+	call	_out
 	MVI	A, 44h
-	@out	USER_PORT+1
+	;@out	USER_PORT+1
+	call	_out
 	MVI	A, 40h
-	@out	USER_PORT+1
+	;@out	USER_PORT+1
+	call	_out
 	xra	a
-	@out	USER_PORT+1
+	;@out	USER_PORT+1
+	call	_out
 
 	; If there is synchronization, then the controller will respond with ERR_START
 	CALL	Recv
@@ -219,17 +258,25 @@ StartCommand2:
 ; Switch to send mode
 
 SwitchSend:
+	PUSH	H
 	CALL	Recv
-SwitchSend0:
 	MVI	A, SEND_MODE
-	@out	USER_PORT+3
+SwS01:
+	LHLD	PPI2_ADR
+	INX	H
+	INX	H
+	INX	H
+	;@out	USER_PORT+3
+	;RET
+	call	_out
+	POP	H
 	RET
 
 ;----------------------------------------------------------------------------
 ; Successful end of the command
 ; and an additional cycle so that the microcontroller releases the bus
-Ret0:
-	XRA	A
+;Ret0:
+;	XRA	A
 
 ;----------------------------------------------------------------------------
 ; Command ending with an error in A
@@ -245,8 +292,12 @@ EndCommand:
 
 SwitchRecv:
 	MVI	A, RECV_MODE
-	@OUT	USER_PORT+3
-	RET ;----------------------------------------------------------------------------
+	PUSH	H
+	;@OUT	USER_PORT+3
+	;RET
+	JMP	SwS01
+
+;----------------------------------------------------------------------------
 ;Switch to receive mode and wait for microcontroller be ready
 
 SwitchRecvAndWait:
@@ -261,21 +312,33 @@ WaitForReady:
 
 
 ;----------------------------------------------------------------------------
-; Send a byte from A.
-
-Send2:
-	@out	USER_PORT
-
-;----------------------------------------------------------------------------
 ; Receive a byte into À
 
 Recv:
+	PUSH	H
+	LHLD	PPI2_ADR
+	JMP	Recv01
+;----------------------------------------------------------------------------
+; Send a byte from A.
+
+Send2:
+	PUSH	H
+	LHLD	PPI2_ADR
+	;@out	USER_PORT
+	call	_out
+Recv01:
+	INX	H
 	MVI	A, 20h
-	@out	USER_PORT+1
+	;@out	USER_PORT+1
+	call	_out
 	XRA	A
-	@out	USER_PORT+1
-	@in	USER_PORT
-	RET ;
+	;@out	USER_PORT+1
+	call	_out
+	DCX	H
+	;@in	USER_PORT
+	call	_in
+	POP	H
+	RET
 ;
 ;===========================================================================
 ;  Get a character to A
@@ -286,38 +349,64 @@ Recv:
 ;  Uses 4 bytes of stack including return address
 ;
 GETCHAR:
-	mvi	A,99H ; A - input, B - output, Clow, Chigh - input
-	@out	SERIAL_CONTROL
-	MVI	A,1
-	@out	CLIENT_STATUS
+	PUSH	H
 	PUSH	D
+	LHLD	PPI2_ADR
+	INX	H
+	INX	H
+	INX	H
+	mvi	A,99H ; A - input, B - output, Clow, Chigh - input
+	;@out	SERIAL_CONTROL
+	call	_out
+	DCX	H
+	DCX	H
+	MVI	A,1
+	;@out	CLIENT_STATUS
+	call	_out
+	INX	H
 	LXI	D,8000h                          ;long timeout
+	
 gc10:	DCX	D
 	MOV	A,D
 	ORA	E
 	JZ	gc90                                ;exit if timeout
-	@in	SERIAL_STATUS                 ;read device status
+	;@in	SERIAL_STATUS                 ;read device status
+	call	_in
 	ANI	RXRDY
 	JNZ	gc10                                ;not ready yet.
 ;
 ;  Data received:  return CY=0. data in A
-	XRA	A                                   ;cy=0
-	@in	SERIAL_DATA                   ;read data
+	DCX	H
+	DCX	H
+	call	_in
+	INX	H
+	STC
+	CMC                                   ;cy=0
+	;@in	SERIAL_DATA                   ;read data
 	push	psw
 	xra	a
-	@out	CLIENT_STATUS
-gc11:	@in	SERIAL_STATUS                 ; wait for server
+	INX	H
+	;@out	CLIENT_STATUS
+	call	_out
+	INX	H
+gc11:	;@in	SERIAL_STATUS                 ; wait for server
+	call	_in
 	ANI	RXRDY
 	JZ	gc11
 	pop	psw
 	POP	D
+	POP	H
 	RET
 ;
 ;  Timeout:  return CY=1
-gc90:	STC	;cy=1
+gc90:
 	MVI	A,0
-	@out	CLIENT_STATUS
+	DCX	H
+	;@out	CLIENT_STATUS
+	call	_out
+	STC	;cy=1
 	POP	D
+	POP	H
 	RET
 ;=======================================================
 
@@ -541,13 +630,22 @@ _ERR2:	DB	0DH,0AH,'WRITING FILE ERROR$'
 
 NOTICE:	DB	'Get file from PC   (C) TCHV   2023',10,13
 	DB	'    Enter:',10,13
-	DB	'A>GET <FILENAME>{/OPTIONS}',10,13
-	DB	'     OPTIONS:',10,13
-	DB	'   /X - execute',10,13
+	DB	'    A>GET <FILENAME>{/OPTIONS}',10,13
+	DB	'         OPTIONS:',10,13
+	DB	'       /X - execute',10,13
 	DB	'$'
 
 MODE:	DS	1
 ?FOUND:	DS	1
+
+VRAM_ADR::	DW 0B770h	; VRAM buffer visible start address - 0B7C2h
+PPI_ADR::	DW 0C200h 	; VV55 keyboard Controller - 0C200h
+PPI2_ADR::	DW 0C400h	; VV55 additional PPI  - 0C400h
+DISP_ADR::	DW 0C000h	; VG75 Display Controller - 0C000h
+DMA_ADR::	DW 0E000h	; VT57 DMA Controller - 0E000h
+
+PALM_CTR_ADR::	DW 0CE00h	; Palmira Control Byte
+		DW 0,0,0	; Reserved for future use
 
 ;
 GET_END:
