@@ -27,8 +27,6 @@ GET_ORG_START:
 GET_START:
 	LXI	D,VRAM_ADR
 	CALL	BIOS_CONFIG
-	LXI	H,50h
-	SHLD	PPI2_ADR
 
 	CALL	GTFNAM
 	CALL	GTOPT
@@ -38,7 +36,7 @@ GET_START:
 	MVI	A,3
 	;@out	CLIENT_STATUS
 	PUSH	H
-	LHLD	PPI2_ADR
+	LHLD	PPI3_ADR
 	INX	H
 	call	_out
 	POP	H
@@ -186,7 +184,7 @@ StartCommand1:
 	CALL          SwitchRecv
 
 	; Beginning of any command (play a sequence in address bus)
-	LHLD	PPI2_ADR
+	LHLD	PPI3_ADR
 	INX	H
 	xra	a
 	;@out	USER_PORT+1
@@ -256,7 +254,7 @@ SwitchSend:
 	CALL	Recv
 	MVI	A, SEND_MODE
 SwS01:
-	LHLD	PPI2_ADR
+	LHLD	PPI3_ADR
 	INX	H
 	INX	H
 	INX	H
@@ -310,14 +308,14 @@ WaitForReady:
 
 Recv:
 	PUSH	H
-	LHLD	PPI2_ADR
+	LHLD	PPI3_ADR
 	JMP	Recv01
 ;----------------------------------------------------------------------------
 ; Send a byte from A.
 
 Send2:
 	PUSH	H
-	LHLD	PPI2_ADR
+	LHLD	PPI3_ADR
 	;@out	USER_PORT
 	call	_out
 Recv01:
@@ -345,7 +343,7 @@ Recv01:
 GETCHAR:
 	PUSH	H
 	PUSH	D
-	LHLD	PPI2_ADR
+	LHLD	PPI3_ADR
 	INX	H
 	INX	H
 	INX	H
@@ -636,9 +634,9 @@ PPI_ADR::	DW 0C200h 	; VV55 keyboard Controller - 0C200h
 PPI2_ADR::	DW 0C400h	; VV55 additional PPI  - 0C400h
 DISP_ADR::	DW 0C000h	; VG75 Display Controller - 0C000h
 DMA_ADR::	DW 0E000h	; VT57 DMA Controller - 0E000h
-
 PALM_CTR_ADR::	DW 0CE00h	; Palmira Control Byte
-		DW 0,0,0	; Reserved for future use
+PPI3_ADR::	DW 0CA00h	; VV55 additional PPI3  - 0CA00h
+		DW 0,0	; Reserved for future use
 
 ;
 GET_END:
