@@ -89,6 +89,7 @@
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <None Include="g1.asm" />
     <None Include="Get.ASM" />
     <None Include="Makefile" />
   </ItemGroup>

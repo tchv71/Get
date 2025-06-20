@@ -21,5 +21,8 @@
     <None Include="Makefile">
       <Filter>Исходные файлы</Filter>
     </None>
+    <None Include="g1.asm">
+      <Filter>Исходные файлы</Filter>
+    </None>
   </ItemGroup>
 </Project>

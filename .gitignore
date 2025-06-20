@@ -13,3 +13,5 @@
 /.vs/VSWorkspaceState.json
 /Release/Get.vcxproj.AssemblyReference.cache
 /Release/Get.log
+*.REL
+/get.prn.ASM

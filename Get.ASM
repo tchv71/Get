@@ -1,4 +1,4 @@
-; GET.COM - get file from PC and save to CP/M disk
+ ; GET.COM - get file from PC and save to CP/M disk
 ; Configurable ports version - get ports config from BIOS
 ;USE_DMA        EQU     0
 USE_PORT        EQU     1
@@ -42,9 +42,22 @@ ENDIF
 ENDIF
 ORG_START          EQU        09000H
 
+IF 0
+	LXI	H, M1_COM
+	LXI	D, 81h
+	LXI	B, M1_CE-M1_COM
+	CALL	CP001
+ENDIF
+
 	LXI	H, GET_ORG_START
 	LXI	D, GET_START
 	LXI	B, GET_END-GET_START
+	CALL	CP001
+	JMP	GET_START
+
+M1_COM: DB	' M1.COM',0
+M1_CE:
+
 CP001:
 	MOV	A,M
 	STAX	D
@@ -54,29 +67,29 @@ CP001:
 	MOV	A,B
 	ORA	C
 	JNZ	CP001
-	JMP	GET_START
+	RET
 
 @SYSREG	MACRO	VAL
-        IN	-1
-        MVI	A,VAL
-        OUT	-1
-        ENDM
+	IN	-1
+	MVI	A,VAL
+	OUT	-1
+	ENDM
 ; IN and OUT MACRO comands
 @in	MACRO	addr
 IF ((addr) LT 256)
-        in	addr
+	in	addr
 ELSE
-        lda	addr
+	lda	addr
 ENDIF
-        ENDM
+	ENDM
 
 @out	MACRO	addr
 IF ((addr) LT 256)
-        out	addr
+	out	addr
 ELSE
-        sta	addr
+	sta	addr
 ENDIF
-        ENDM
+	ENDM
 
 DMA EQU 30H
 SD  EQU 60H
@@ -92,8 +105,8 @@ ENDIF
 	@SYSREG 0C0h
 IFDEF  USE_PORT
 	MVI     A,12
-        out     FT245R
-        out     FT245R + 1
+	out     FT245R
+	out     FT245R + 1
 ENDIF
 	@SYSREG 80h
 
@@ -103,13 +116,14 @@ ENDIF
 	;CALL	StartCommand
 	CALL	READRK_NO_START
 IFNDEF  CPM
-	MVI	A,3
+	JMP	0F86Ch
+	;MVI	A,3
 	;@out	CLIENT_STATUS
-	PUSH	H
-	LHLD	PPI3_ADR
-	INX	H
-	call	_out
-	POP	H
+	;PUSH	H
+	;LHLD	PPI3_ADR
+	;INX	H
+	;call	_out
+	;POP	H
 ENDIF
 	LXI	B,5000
 L001:	DCX	B
@@ -176,6 +190,10 @@ READRK_NO_START:
 	MVI	C,0
 READRK:
 	CALL	GETCHAR
+	PUSH	PSW
+	CALL	CheckBrk
+	JZ	Break
+	POP	PSW
 	JC	READRK
 	MOV	H,A
 	CALL	GETCHAR
@@ -197,10 +215,12 @@ READRK:
 	MOV	D,A
 	PUSH	H
 LOOP:	CALL	GETCHAR
-	JC	ERRRK
+	JC	LOOP3
 	MOV	M,A
 	INX	H
 	DCX	D
+	CALL	CheckBrk
+	JZ	Break
 	MOV	A,D
 	ORA	E
 	JNZ	LOOP
@@ -210,88 +230,36 @@ LOOP2:  CALL	GETCHAR
 	JC	ERRRK
 	DCR	E
 	JNZ	LOOP2
+	CALL	GETCHAR ; Skip the rest of a file (until read timeout)
+	JNC	$-3
 	MOV	A,C
 	ORA	A
 	POP	D
 	RZ
 	PCHL
+LOOP3:  JMP     LOOP
 
+IFDEF CPM
+	JMP	0
 ERRRK:
 	LXI	D,ERR_RECEIVE
 	MVI	C,9
 	CALL	5
+Break:
 	RST	0
-
 ERR_RECEIVE:
 	DB	"Error on receive$"
-
-IF 0
-;SEND_MODE	equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
-;RECV_MODE	equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
-
-STA_START	EQU 040h ; МК переключен в режим приема команд
-STA_WAIT	EQU 041h ; МК выполняет команду
-STA_OK_DISK	EQU 042h ; Накопитель исправен, микроконтроллер готов к приему команды
-
-;----------------------------------------------------------------------------
-; A start of any command. 
-; A - command code
-
-StartCommand:
-; The first step is synchronization with the controller
-; 256 attempts are performed, each skipping 256+ bytes
-; That is, this is the maximum amount of data that the controller can transmit.
-	PUSH	B
-	PUSH	H
-	PUSH	PSW
-	MVI	C, 0
-
-StartCommand1:
-	; Receive mode (release the bus - port A) and initialize HL
-	; CALL	SwitchRecv
-
-	; Если есть синхронизация, то контроллер ответит STA_START
-	CALL	GETCHAR
-	CPI	STA_START
-	JNZ	StartCommandErr2
-;----------------------------------------------------------------------------
-; Синхронизация с контроллером есть. Контроллер должен ответить STA_OK_DISK
-
-     ; Ответ         	
-	CALL	WaitForReady
-	CPI	STA_OK_DISK
-	JNZ	StartCommandErr2
-
-	; Переключаемся в режим передачи
-	;CALL       SwitchSend
-
-	POP	PSW
-	POP	H
-	POP	B
-
-	; Передаем код команды
-	JMP	PUTCHAR
-StartCommandErr2:
-	POP	B ; Прошлое значение PSW
-	POP	H ; Прошлое значение H
-	POP	B ; Прошлое значение B     
-	POP	B ; Выходим через функцию.
-	RET
-
-
-;----------------------------------------------------------------------------
-;Switch to receive mode and wait for microcontroller be ready
-
-SwitchRecvAndWait:
-	;CALL SwitchRecv
-
-;----------------------------------------------------------------------------
-WaitForReady:
-	CALL	GETCHAR
-	CPI	STA_WAIT
-	JZ	WaitForReady
-	RET
+ELSE
+ERRRK:
+	LXI	H,ERR_RECEIVE
+	CALL	0F818h
+Break:
+	JMP	0F86Ch
+ERR_RECEIVE:
+	DB	"ERROR ON RECEIVE",0
 ENDIF
+
+
 
 ;
 ;===========================================================================
@@ -305,28 +273,47 @@ ENDIF
 GETCHAR:
 IFDEF  USE_PORT
 	PUSH	D
-	LXI	D,8000h       ;long timeout
+	PUSH	B
+	LXI	D,800h       ;long timeout
 gc10:	DCX	D
 	MOV	A,D
 	ORA	E
 	JZ	gc90          ;exit if timeout
 	@in	FIFO_STATUS   ;read device status
 	ANI	RXEMPTY
-	JNZ	gc10          ;not ready yet.
-        ;PUSH    H
-        ;POP     H
+	JZ	gc12          ;symbol is ready
+IFNDEF CPM
+	MVI	C,'.'
+	CALL	0F809h
+	MVI	C,8
+	CALL	0F809h
+ENDIF
+	CALL	CheckBrk
+	JZ	Break
+	JMP	gc10
 ;
 ;  Data received:  return CY=0. data in A
+gc12:
 	XRA	A             ;cy=0
 	@in	FIFO_DATA     ;read data
-        ;PUSH    PSW
-        ;CALL    0F815h
-        ;POP     PSW
+IFNDEF CPM
+	PUSH    PSW
+	MVI	C,'_'
+	CALL	0F809h
+	MVI	C,'_'
+	CALL	0F809h
+	CALL	0F815h
+	POP	PSW
+ENDIF
+	POP	B
 	POP	D
 	RET
 ;
 ;  Timeout:  return CY=1
-gc90:	STC                   ;cy=1
+gc90:	MVI	C,'+'
+	CALL	0F809h
+	STC                   ;cy=1
+	POP	B
 	POP	D
 	RET
 ELSE
